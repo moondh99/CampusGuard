@@ -45,6 +45,11 @@ def get_data_store() -> DataStore:
 
 ds = get_data_store()
 
+# ── 앱 시작 시 데모 데이터 자동 시드 (DB가 비어있을 때만) ──────
+from seed_demo import seed_if_empty as _seed_if_empty
+if _seed_if_empty(ds):
+    st.toast("🌱 데모 데이터가 자동으로 로드되었습니다.", icon="✅")
+
 # ── 전역 API 키 체크 ───────────────────────────────────────────
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
