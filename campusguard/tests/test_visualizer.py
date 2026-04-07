@@ -3,6 +3,8 @@ Visualizer 모듈 테스트 — 단위 테스트 + Property-Based 테스트
 """
 import pytest
 import pandas as pd
+import plotly.colors as pc
+import plotly.graph_objects as go
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
@@ -10,7 +12,11 @@ from modules.visualizer import (
     render_attendance_line_chart,
     render_absence_heatmap,
     detect_burnout_periods,
+    render_sentiment_trend_chart,
+    render_risk_distribution_chart,
+    RISK_COLORS,
 )
+from modules.risk_predictor import RiskResult
 
 # ---------------------------------------------------------------------------
 # 단위 테스트
@@ -171,3 +177,211 @@ def test_property_6_burnout_detection_accuracy(scores):
         assert len(periods) > 0, (
             f"조건을 충족하는 구간이 있지만 감지되지 않음: scores={clean_scores}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Property 8: 출결 라인 차트 colorway 불변성
+# Validates: Requirements 5.1, 5.4
+# ---------------------------------------------------------------------------
+
+def test_attendance_line_chart_colorway_invariant():
+    """출결 라인 차트 Figure의 layout.colorway에 #1f77b4가 포함되어야 한다.
+
+    **Validates: Requirements 5.1, 5.4**
+    """
+    df = pd.DataFrame(
+        {
+            "name": ["김훈련", "이수강"],
+            "date": ["2026-04-01", "2026-04-02"],
+            "status": ["출석", "결석"],
+        }
+    )
+    fig = render_attendance_line_chart(df)
+    assert "#1f77b4" in fig.layout.colorway
+
+
+# ---------------------------------------------------------------------------
+# Property 5: 히트맵 colorscale 불변성
+# Validates: Requirements 5.3
+# ---------------------------------------------------------------------------
+
+# Plotly가 "Blues"를 resolve한 결과 (tuple of tuples)
+_BLUES_RESOLVED = tuple(
+    tuple(item) for item in pc.get_colorscale("Blues")
+)
+
+
+@given(df=attendance_df_st())
+@settings(max_examples=100)
+def test_property_5_heatmap_colorscale_invariant(df):
+    """임의의 출결 DataFrame에 대해 render_absence_heatmap의 첫 번째 trace colorscale은 항상 "Blues"여야 한다.
+
+    Plotly는 colorscale="Blues" 문자열을 내부적으로 RGB tuple로 resolve하므로,
+    문자열 "Blues" 또는 resolve된 Blues 팔레트와 동일한지 검증한다.
+
+    **Validates: Requirements 5.3**
+    """
+    fig = render_absence_heatmap(df)
+    assert len(fig.data) > 0, "히트맵 Figure에 trace가 없음"
+    actual = fig.data[0].colorscale
+    # Plotly는 "Blues" 문자열을 tuple of tuples로 resolve함
+    assert actual == "Blues" or actual == _BLUES_RESOLVED, (
+        f"colorscale이 Blues가 아님: {actual}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Property 4: 감성 차트 Y축 설정 불변성
+# Validates: Requirements 3.1, 3.2
+# ---------------------------------------------------------------------------
+
+@given(
+    sentiment_data=st.dictionaries(
+        keys=st.text(min_size=1, max_size=10),
+        values=st.lists(st.floats(min_value=0.0, max_value=1.0), min_size=1, max_size=20),
+        min_size=1, max_size=5,
+    )
+)
+@settings(max_examples=100)
+def test_property_4_sentiment_chart_yaxis_invariant(sentiment_data):
+    fig = render_sentiment_trend_chart(sentiment_data)
+    assert fig.layout.yaxis.title.text == "긍정도 (1=긍정, 0=부정)"
+    assert fig.layout.yaxis.autorange == "reversed"
+
+
+# ---------------------------------------------------------------------------
+# render_risk_distribution_chart 단위 테스트 (Requirements 6.1~6.4)
+# ---------------------------------------------------------------------------
+
+def _make_risk_result(name: str, level: str) -> RiskResult:
+    return RiskResult(
+        name=name,
+        final_score=0.5,
+        final_level=level,
+        attendance_level=level,
+        sentiment_score=0.5,
+        recommendation="",
+    )
+
+
+def test_risk_distribution_chart_empty_returns_empty_figure():
+    """빈 리스트 입력 시 빈 Figure 반환 (Requirements 6.3)."""
+    fig = render_risk_distribution_chart([])
+    assert len(fig.data) == 0
+
+
+def test_risk_distribution_chart_uses_bar_horizontal():
+    """go.Bar orientation='h' 사용 확인 (Requirements 6.1)."""
+    results = [_make_risk_result("A", "위험"), _make_risk_result("B", "정상")]
+    fig = render_risk_distribution_chart(results)
+    assert len(fig.data) == 1
+    bar = fig.data[0]
+    assert bar.type == "bar"
+    assert bar.orientation == "h"
+
+
+def test_risk_distribution_chart_colors_match_risk_colors():
+    """RISK_COLORS 팔레트 적용 확인 (Requirements 6.2)."""
+    results = [
+        _make_risk_result("A", "위험"),
+        _make_risk_result("B", "경고"),
+        _make_risk_result("C", "정상"),
+    ]
+    fig = render_risk_distribution_chart(results)
+    bar = fig.data[0]
+    # y축 레이블 순서에 맞게 색상 확인
+    for i, level in enumerate(bar.y):
+        assert bar.marker.color[i] == RISK_COLORS[level]
+
+
+def test_risk_distribution_chart_level_order():
+    """등급 순서가 위험 > 경고 > 정상으로 고정됨 (Requirements 6.4)."""
+    results = [
+        _make_risk_result("A", "정상"),
+        _make_risk_result("B", "경고"),
+        _make_risk_result("C", "위험"),
+    ]
+    fig = render_risk_distribution_chart(results)
+    assert list(fig.data[0].y) == ["위험", "경고", "정상"]
+
+
+def test_risk_distribution_chart_counts_correct():
+    """각 등급 인원 수가 정확히 집계됨."""
+    results = [
+        _make_risk_result("A", "위험"),
+        _make_risk_result("B", "위험"),
+        _make_risk_result("C", "정상"),
+    ]
+    fig = render_risk_distribution_chart(results)
+    bar = fig.data[0]
+    level_to_count = dict(zip(bar.y, bar.x))
+    assert level_to_count["위험"] == 2
+    assert level_to_count["정상"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Property 6 (UI/UX): 위험도 분포 차트 수평 바차트 구조 불변성
+# Validates: Requirements 6.1, 6.4
+# ---------------------------------------------------------------------------
+
+@st.composite
+def risk_result_list_st(draw):
+    """비어있지 않은 RiskResult 리스트 생성 전략."""
+    names = draw(st.lists(
+        st.text(
+            alphabet=st.characters(whitelist_categories=("Lu", "Ll", "Lo", "Nd")),
+            min_size=1,
+            max_size=5,
+        ),
+        min_size=1,
+        max_size=10,
+        unique=True,
+    ))
+    results = []
+    for name in names:
+        level = draw(st.sampled_from(["위험", "경고", "정상"]))
+        results.append(RiskResult(
+            name=name,
+            final_score=0.5,
+            final_level=level,
+            attendance_level=level,
+            sentiment_score=0.5,
+            recommendation="",
+        ))
+    return results
+
+
+@given(risk_results=risk_result_list_st())
+@settings(max_examples=100)
+def test_property_6_risk_distribution_chart_horizontal_bar_invariant(risk_results):
+    """비어있지 않은 RiskResult 리스트에 대해 render_risk_distribution_chart는
+    첫 번째 trace가 go.Bar이고, orientation=='h'이며, 제목이 '위험도 분포'여야 한다.
+
+    **Validates: Requirements 6.1, 6.4**
+    """
+    fig = render_risk_distribution_chart(risk_results)
+    assert isinstance(fig.data[0], go.Bar)
+    assert fig.data[0].orientation == "h"
+    assert fig.layout.title.text == "위험도 분포"
+
+# ---------------------------------------------------------------------------
+# Property 7: 위험도 분포 차트 등급별 색상 매핑 불변성
+# Validates: Requirements 6.3
+# ---------------------------------------------------------------------------
+
+def test_property_7_risk_distribution_chart_color_mapping():
+    """세 등급이 모두 포함된 RiskResult 리스트로 호출 시 각 등급 바 색상이 올바른지 검증.
+    
+    **Validates: Requirements 6.3**
+    """
+    results = [
+        _make_risk_result("A", "위험"),
+        _make_risk_result("B", "경고"),
+        _make_risk_result("C", "정상"),
+    ]
+    fig = render_risk_distribution_chart(results)
+    bar = fig.data[0]
+    level_color_map = dict(zip(bar.y, bar.marker.color))
+    assert level_color_map["위험"] == "#d62728"
+    assert level_color_map["경고"] == "#ff7f0e"
+    assert level_color_map["정상"] == "#2ca02c"

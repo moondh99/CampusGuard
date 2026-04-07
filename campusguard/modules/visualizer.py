@@ -9,6 +9,18 @@ import plotly.graph_objects as go
 
 from modules.risk_predictor import RiskResult
 
+# 팔레트 상수
+PRIMARY_COLOR = "#1f77b4"
+CAMPUSGUARD_PALETTE = [
+    "#1f77b4", "#4a9fd4", "#7bbfe8", "#aad4f0",
+    "#d4e9f7", "#0d5a8a", "#2196c4", "#5ab0d8",
+]
+RISK_COLORS = {
+    "위험": "#d62728",
+    "경고": "#ff7f0e",
+    "정상": "#2ca02c",
+}
+
 # 출결 상태 → 숫자 매핑 (라인 차트 Y축)
 STATUS_MAP = {
     "출석": 1,
@@ -49,33 +61,44 @@ def render_attendance_line_chart(df: pd.DataFrame) -> go.Figure:
             tickvals=list(STATUS_MAP.values()),
             ticktext=list(STATUS_MAP.keys()),
         ),
+        colorway=CAMPUSGUARD_PALETTE,
     )
     return fig
 
 
 def render_risk_distribution_chart(risk_results: list[RiskResult]) -> go.Figure:
-    """RiskLevel 분포 파이/바 차트.
+    """위험도 등급 분포 수평 바차트.
 
     Args:
         risk_results: RiskResult 리스트
 
     Returns:
-        go.Figure — RiskLevel 파이 차트
+        go.Figure — 위험도 등급별 수평 바차트
     """
+    if not risk_results:
+        return go.Figure()
+
     from collections import Counter
 
     counts = Counter(r.final_level for r in risk_results)
-    labels = list(counts.keys())
-    values = list(counts.values())
+    # 등급 순서 고정: 위험, 경고, 정상
+    levels = [lvl for lvl in ["위험", "경고", "정상"] if lvl in counts]
+    values = [counts[lvl] for lvl in levels]
+    colors = [RISK_COLORS.get(lvl, "#888888") for lvl in levels]
 
     fig = go.Figure(
-        go.Pie(
-            labels=labels,
-            values=values,
-            hole=0.3,
+        go.Bar(
+            x=values,
+            y=levels,
+            orientation="h",
+            marker=dict(color=colors),
         )
     )
-    fig.update_layout(title="위험도 분포")
+    fig.update_layout(
+        title="위험도 분포",
+        xaxis_title="인원 수",
+        yaxis_title="위험 등급",
+    )
     return fig
 
 
@@ -110,7 +133,7 @@ def render_absence_heatmap(df: pd.DataFrame) -> go.Figure:
             x=dates,
             y=["결석률"],
             z=[rates],
-            colorscale="Reds",
+            colorscale="Blues",
             zmin=0.0,
             zmax=1.0,
         )
@@ -143,8 +166,12 @@ def render_sentiment_trend_chart(sentiment_data: dict[str, list]) -> go.Figure:
     fig.update_layout(
         title="훈련생별 감성 점수 추이",
         xaxis_title="일차",
-        yaxis_title="감성 점수 (0=긍정, 1=부정)",
-        yaxis=dict(range=[0.0, 1.0]),
+        yaxis=dict(
+            title="긍정도 (1=긍정, 0=부정)",
+            range=[0.0, 1.0],
+            autorange="reversed",
+        ),
+        colorway=CAMPUSGUARD_PALETTE,
     )
     return fig
 

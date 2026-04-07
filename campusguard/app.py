@@ -35,6 +35,17 @@ except Exception:
     RAGEngine = None  # type: ignore
     _RAG_AVAILABLE = False
 
+def _style_risk_row(row: pd.Series) -> list[str]:
+    """final_level 값에 따라 행 배경색 반환."""
+    color_map = {
+        "위험": "background-color: #ffcccc",
+        "경고": "background-color: #fff3cd",
+        "정상": "background-color: #d4edda",
+    }
+    style = color_map.get(row["final_level"], "")
+    return [style] * len(row)
+
+
 st.set_page_config(page_title="CampusGuard", page_icon="🎓", layout="wide")
 
 # ── 앱 시작 시 DataStore 초기화 ────────────────────────────────
@@ -65,8 +76,6 @@ if _err:
     st.error(f"❌ 시드 오류: {_err}")
 elif _seeded:
     st.toast(f"🌱 데모 데이터 로드 완료 ({_count}건)", icon="✅")
-else:
-    st.toast(f"ℹ️ 기존 데이터 사용 중 ({_count}건)")
 
 # ── 전역 API 키 체크 ───────────────────────────────────────────
 api_key = os.getenv("OPENAI_API_KEY")
@@ -91,100 +100,104 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.subheader("훈련생 탈락 위험도 분석")
 
-    col_upload, col_meta = st.columns([2, 1])
-    with col_upload:
-        uploaded = st.file_uploader("출결 CSV 업로드 (name, date, status)", type="csv")
-        use_sample = st.checkbox("샘플 데이터 사용", value=False)
-    with col_meta:
-        course_name_input = st.text_input("과정명", value="K-디지털 트레이닝 (AI·빅데이터)")
-        cohort_input = st.text_input("기수", value="3기")
+    with st.expander("📂 데이터 관리", expanded=True):
+        col_upload, col_meta = st.columns([2, 1])
+        with col_upload:
+            uploaded = st.file_uploader("출결 CSV 업로드 (name, date, status)", type="csv")
+            use_sample = st.checkbox("샘플 데이터 사용", value=False)
+        with col_meta:
+            course_name_input = st.text_input("과정명", value="K-디지털 트레이닝 (AI·빅데이터)")
+            cohort_input = st.text_input("기수", value="3기")
 
-    df = None
-    if uploaded:
-        try:
-            df = pd.read_csv(uploaded)
-            required_cols = {"name", "date", "status"}
-            if not required_cols.issubset(df.columns):
-                st.error(f"❌ CSV에 필수 컬럼이 없습니다. 필요한 컬럼: {required_cols}")
-                df = None
-            else:
-                inserted = ds.save_attendance_records(df, course_name_input, cohort_input)
-                if inserted > 0:
-                    st.success(f"✅ {inserted}건의 출결 레코드가 저장되었습니다.")
-        except Exception as e:
-            st.error(f"❌ CSV 파일을 읽는 중 오류가 발생했습니다: {str(e)}")
-            df = None
-    elif use_sample:
-        sample_path = os.path.join(os.path.dirname(__file__), "data", "sample_attendance.csv")
-        if os.path.exists(sample_path):
-            df = pd.read_csv(sample_path)
-        else:
-            st.info("ℹ️ 샘플 데이터 파일을 찾을 수 없습니다. CSV 파일을 직접 업로드해주세요.")
-    else:
-        # DB에서 출결 데이터 로드
-        db_records = ds.get_attendance_records(course=course_name_input if course_name_input else None)
-        if db_records:
-            df = pd.DataFrame(db_records)[["name", "date", "status"]]
-
-    # ── 출결 직접 입력 ──────────────────────────────────────────
-    with st.expander("➕ 출결 직접 입력"):
-        inp_col1, inp_col2, inp_col3 = st.columns(3)
-        with inp_col1:
-            inp_name = st.text_input("훈련생 이름", key="inp_name")
-        with inp_col2:
-            inp_date = st.date_input("날짜", value=date.today(), key="inp_date")
-        with inp_col3:
-            inp_status = st.selectbox("출결 상태", ["출석", "결석", "지각", "조퇴"], key="inp_status")
-
-        if st.button("출결 추가"):
-            if inp_name.strip():
-                ok = ds.insert_attendance_record(
-                    name=inp_name.strip(),
-                    date=str(inp_date),
-                    status=inp_status,
-                    course=course_name_input,
-                    cohort=cohort_input,
-                )
-                if ok:
-                    st.success(f"✅ {inp_name} / {inp_date} / {inp_status} 추가 완료")
-                    st.rerun()
+        df = None
+        if uploaded:
+            try:
+                df = pd.read_csv(uploaded)
+                required_cols = {"name", "date", "status"}
+                if not required_cols.issubset(df.columns):
+                    st.error(f"❌ CSV에 필수 컬럼이 없습니다. 필요한 컬럼: {required_cols}")
+                    df = None
                 else:
-                    st.warning("⚠️ 이미 동일한 날짜·과정 레코드가 존재합니다.")
+                    inserted = ds.save_attendance_records(df, course_name_input, cohort_input)
+                    if inserted > 0:
+                        st.success(f"✅ {inserted}건의 출결 레코드가 저장되었습니다.")
+            except Exception as e:
+                st.error(f"❌ CSV 파일을 읽는 중 오류가 발생했습니다: {str(e)}")
+                df = None
+        elif use_sample:
+            sample_path = os.path.join(os.path.dirname(__file__), "data", "sample_attendance.csv")
+            if os.path.exists(sample_path):
+                df = pd.read_csv(sample_path)
             else:
-                st.warning("훈련생 이름을 입력해주세요.")
-
-    # ── DB 저장 출결 조회 및 수정/삭제 ─────────────────────────
-    with st.expander("✏️ 저장된 출결 수정 / 삭제"):
-        db_records = ds.get_attendance_records(course=course_name_input if course_name_input else None)
-        if db_records:
-            db_df = pd.DataFrame(db_records)
-            st.dataframe(db_df[["id", "name", "date", "status", "course", "cohort"]], use_container_width=True)
-
-            edit_col1, edit_col2, edit_col3 = st.columns(3)
-            with edit_col1:
-                edit_id = st.number_input("수정/삭제할 레코드 ID", min_value=1, step=1, key="edit_id")
-            with edit_col2:
-                edit_status = st.selectbox("변경할 상태", ["출석", "결석", "지각", "조퇴"], key="edit_status")
-            with edit_col3:
-                st.write("")
-                st.write("")
-                upd_col, del_col = st.columns(2)
-                with upd_col:
-                    if st.button("수정"):
-                        if ds.update_attendance_record(int(edit_id), edit_status):
-                            st.success(f"✅ ID {edit_id} → {edit_status} 수정 완료")
-                            st.rerun()
-                        else:
-                            st.error("❌ 해당 ID를 찾을 수 없습니다.")
-                with del_col:
-                    if st.button("삭제", type="secondary"):
-                        if ds.delete_attendance_record(int(edit_id)):
-                            st.success(f"✅ ID {edit_id} 삭제 완료")
-                            st.rerun()
-                        else:
-                            st.error("❌ 해당 ID를 찾을 수 없습니다.")
+                st.info("ℹ️ 샘플 데이터 파일을 찾을 수 없습니다. CSV 파일을 직접 업로드해주세요.")
         else:
-            st.info("저장된 출결 레코드가 없습니다. CSV 업로드 또는 직접 입력으로 추가하세요.")
+            # DB에서 출결 데이터 로드
+            db_records = ds.get_attendance_records(course=course_name_input if course_name_input else None)
+            if db_records:
+                df = pd.DataFrame(db_records)[["name", "date", "status"]]
+
+        # ── 출결 직접 입력 ──────────────────────────────────────────
+        with st.expander("➕ 출결 직접 입력"):
+            inp_col1, inp_col2, inp_col3 = st.columns(3)
+            with inp_col1:
+                inp_name = st.text_input("훈련생 이름", key="inp_name")
+            with inp_col2:
+                inp_date = st.date_input("날짜", value=date.today(), key="inp_date")
+            with inp_col3:
+                inp_status = st.selectbox("출결 상태", ["출석", "결석", "지각", "조퇴"], key="inp_status")
+
+            if st.button("출결 추가"):
+                if inp_name.strip():
+                    ok = ds.insert_attendance_record(
+                        name=inp_name.strip(),
+                        date=str(inp_date),
+                        status=inp_status,
+                        course=course_name_input,
+                        cohort=cohort_input,
+                    )
+                    if ok:
+                        st.success(f"✅ {inp_name} / {inp_date} / {inp_status} 추가 완료")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ 이미 동일한 날짜·과정 레코드가 존재합니다.")
+                else:
+                    st.warning("훈련생 이름을 입력해주세요.")
+
+        # ── DB 저장 출결 조회 및 수정/삭제 ─────────────────────────
+        with st.expander("✏️ 저장된 출결 수정 / 삭제"):
+            db_records = ds.get_attendance_records(course=course_name_input if course_name_input else None)
+            if db_records:
+                db_df = pd.DataFrame(db_records)
+                st.dataframe(db_df[["id", "name", "date", "status", "course", "cohort"]], use_container_width=True)
+
+                edit_col1, edit_col2, edit_col3 = st.columns(3)
+                with edit_col1:
+                    edit_id = st.number_input("수정/삭제할 레코드 ID", min_value=1, step=1, key="edit_id")
+                with edit_col2:
+                    edit_status = st.selectbox("변경할 상태", ["출석", "결석", "지각", "조퇴"], key="edit_status")
+                with edit_col3:
+                    st.write("")
+                    st.write("")
+                    upd_col, del_col = st.columns(2)
+                    with upd_col:
+                        if st.button("수정"):
+                            if ds.update_attendance_record(int(edit_id), edit_status):
+                                st.success(f"✅ ID {edit_id} → {edit_status} 수정 완료")
+                                st.rerun()
+                            else:
+                                st.error("❌ 해당 ID를 찾을 수 없습니다.")
+                    with del_col:
+                        if st.button("삭제", type="secondary"):
+                            if ds.delete_attendance_record(int(edit_id)):
+                                st.success(f"✅ ID {edit_id} 삭제 완료")
+                                st.rerun()
+                            else:
+                                st.error("❌ 해당 ID를 찾을 수 없습니다.")
+            else:
+                st.info("저장된 출결 레코드가 없습니다. CSV 업로드 또는 직접 입력으로 추가하세요.")
+
+    with st.container():
+        st.markdown("### 📊 분석 결과")
 
     if df is not None:
         st.dataframe(df, use_container_width=True)
@@ -237,17 +250,20 @@ with tab1:
 
             # 결과 테이블 + 상담일지 버튼
             st.markdown("#### 위험도 분석 결과")
-            for r in risk_results:
-                level_color = {"위험": "🔴", "경고": "🟡", "정상": "🟢"}.get(r.final_level, "")
-                cols = st.columns([2, 1, 1, 1, 3, 2])
-                cols[0].write(r.name)
-                cols[1].write(f"{level_color} {r.final_level}")
-                cols[2].write(f"{r.final_score:.2f}")
-                cols[3].write(r.attendance_level)
-                cols[4].write(r.recommendation)
+            result_df = pd.DataFrame([{
+                "name": r.name,
+                "final_level": r.final_level,
+                "final_score": round(r.final_score, 2),
+                "attendance_level": r.attendance_level,
+                "recommendation": r.recommendation,
+            } for r in risk_results])
+            styled = result_df.style.apply(_style_risk_row, axis=1)
+            st.dataframe(styled, use_container_width=True)
 
+            # 상담일지 생성 버튼 (별도 루프)
+            for r in risk_results:
                 if r.final_level in ("경고", "위험"):
-                    if cols[5].button("상담일지 생성", key=f"docx_{r.name}"):
+                    if st.button("상담일지 생성", key=f"docx_{r.name}"):
                         today_str = date.today().strftime("%Y-%m-%d")
                         content = generate_counseling_log(
                             name=r.name,
@@ -269,6 +285,8 @@ with tab1:
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             key=f"dl_{r.name}",
                         )
+    else:
+        st.info("출결 데이터를 업로드하거나 DB에서 불러오세요.")
 
 # ── 탭 2: AI 강의 비서 ────────────────────────────────────────
 with tab2:
@@ -298,11 +316,13 @@ with tab2:
     # 멀티턴 히스토리 관리
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
+    if "confirm_clear" not in st.session_state:
+        st.session_state.confirm_clear = False
 
     # 대화 히스토리 표시
     for msg in st.session_state.chat_history:
-        role_label = "🧑 훈련생" if msg["role"] == "user" else "🤖 AI 튜터"
-        st.markdown(f"**{role_label}:** {msg['content']}")
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
     context_input = st.text_area(
         "현재 학습 중인 교안 맥락 (선택)",
@@ -310,47 +330,48 @@ with tab2:
         placeholder="예: pandas 기초 - DataFrame 인덱싱",
         key="chat_context",
     )
-    question = st.text_area(
-        "질문 또는 에러 메시지",
-        height=120,
-        placeholder="예: KeyError: 'age' 에러가 발생했어요",
-        key="chat_question",
-    )
 
-    col_ask, col_clear = st.columns([3, 1])
-    with col_ask:
-        ask_btn = st.button("답변 받기")
-    with col_clear:
-        if st.button("히스토리 초기화"):
-            st.session_state.chat_history = clear_history()
-            st.rerun()
+    if st.button("히스토리 초기화", disabled=st.session_state.get("confirm_clear", False)):
+        st.session_state.confirm_clear = True
+        st.rerun()
 
-    if ask_btn:
-        if question.strip():
-            # traceback 자동 감지
-            tb = detect_traceback(question)
-            effective_context = context_input
-            if tb:
-                effective_context = f"[에러 컨텍스트 자동 감지]\n{tb}\n\n{context_input}".strip()
+    if st.session_state.get("confirm_clear", False):
+        st.warning("정말 초기화하시겠습니까?")
+        col_ok, col_cancel = st.columns(2)
+        with col_ok:
+            if st.button("확인"):
+                clear_history()
+                st.session_state.chat_history = []
+                st.session_state.confirm_clear = False
+                st.rerun()
+        with col_cancel:
+            if st.button("취소"):
+                st.session_state.confirm_clear = False
+                st.rerun()
 
-            # RAG 컨텍스트 주입
-            if st.session_state.rag_engine is not None:
-                rag_ctx = st.session_state.rag_engine.get_context_prompt(question)
-                if rag_ctx:
-                    effective_context = f"{rag_ctx}\n\n{effective_context}".strip()
+    if prompt := st.chat_input("질문 또는 에러 메시지를 입력하세요"):
+        # traceback 자동 감지
+        tb = detect_traceback(prompt)
+        effective_context = context_input
+        if tb:
+            effective_context = f"[에러 컨텍스트 자동 감지]\n{tb}\n\n{context_input}".strip()
 
-            with st.spinner("AI가 답변을 생성 중입니다..."):
-                answer = ask_assistant(
-                    question,
-                    context=effective_context,
-                    history=st.session_state.chat_history,
-                )
+        # RAG 컨텍스트 주입
+        if st.session_state.rag_engine is not None:
+            rag_ctx = st.session_state.rag_engine.get_context_prompt(prompt)
+            if rag_ctx:
+                effective_context = f"{rag_ctx}\n\n{effective_context}".strip()
 
-            st.session_state.chat_history.append({"role": "user", "content": question})
-            st.session_state.chat_history.append({"role": "assistant", "content": answer})
-            st.rerun()
-        else:
-            st.warning("질문을 입력해주세요.")
+        with st.spinner("AI가 답변을 생성 중입니다..."):
+            answer = ask_assistant(
+                prompt,
+                context=effective_context,
+                history=st.session_state.chat_history,
+            )
+
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+        st.session_state.chat_history.append({"role": "assistant", "content": answer})
+        st.rerun()
 
 # ── 탭 3: 행정 서류 자동 생성 ─────────────────────────────────
 with tab3:
