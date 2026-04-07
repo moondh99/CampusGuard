@@ -1,0 +1,4 @@
+# file: /Users/daehan/Desktop/kitvibecoding/campusguard/modules/attendance.py
+# hypothesis_version: 6.141.1
+
+['date', 'name', 'status', '결석', '경고', '위험', '정상', '조퇴', '지각']

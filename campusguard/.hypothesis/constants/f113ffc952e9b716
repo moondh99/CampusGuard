@@ -1,0 +1,4 @@
+# file: /Users/daehan/Desktop/kitvibecoding/campusguard/modules/visualizer.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.3, 0.6, 1.0, 'Reds', 'absence_rate', 'absent_count', 'date', 'lines+markers', 'name', 'status', '감성 점수 (0=긍정, 1=부정)', '결석', '결석률', '날짜', '날짜별 결석률 히트맵', '위험도 분포', '일차', '조퇴', '지각', '출결 상태', '출석', '훈련생별 감성 점수 추이', '훈련생별 출결 추이']

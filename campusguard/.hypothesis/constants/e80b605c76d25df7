@@ -1,0 +1,4 @@
+# file: /Users/daehan/Desktop/kitvibecoding/campusguard/modules/risk_predictor.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.3, 0.4, 0.5, 0.6, 1.0, 'attendance', 'sentiment', '경고', '위험', '이번 주 내 상담 일정 잡기 권장', '정기 모니터링 유지', '정상']
