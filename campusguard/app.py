@@ -94,10 +94,10 @@ with tab1:
     col_upload, col_meta = st.columns([2, 1])
     with col_upload:
         uploaded = st.file_uploader("출결 CSV 업로드 (name, date, status)", type="csv")
-        use_sample = st.checkbox("샘플 데이터 사용", value=True)
+        use_sample = st.checkbox("샘플 데이터 사용", value=False)
     with col_meta:
-        course_name_input = st.text_input("과정명", value="K-디지털 트레이닝")
-        cohort_input = st.text_input("기수", value="1기")
+        course_name_input = st.text_input("과정명", value="K-디지털 트레이닝 (AI·빅데이터)")
+        cohort_input = st.text_input("기수", value="3기")
 
     df = None
     if uploaded:
@@ -120,6 +120,11 @@ with tab1:
             df = pd.read_csv(sample_path)
         else:
             st.info("ℹ️ 샘플 데이터 파일을 찾을 수 없습니다. CSV 파일을 직접 업로드해주세요.")
+    else:
+        # DB에서 출결 데이터 로드
+        db_records = ds.get_attendance_records(course=course_name_input if course_name_input else None)
+        if db_records:
+            df = pd.DataFrame(db_records)[["name", "date", "status"]]
 
     # ── 출결 직접 입력 ──────────────────────────────────────────
     with st.expander("➕ 출결 직접 입력"):
