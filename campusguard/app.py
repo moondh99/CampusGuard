@@ -53,10 +53,20 @@ ds = get_data_store()
 @st.cache_resource
 def _run_seed():
     from seed_demo import seed_if_empty as _seed_if_empty
-    return _seed_if_empty(ds)
+    try:
+        result = _seed_if_empty(ds)
+        count = len(ds.get_attendance_records())
+        return result, count, None
+    except Exception as e:
+        return False, 0, str(e)
 
-if _run_seed():
-    st.toast("🌱 데모 데이터가 자동으로 로드되었습니다.", icon="✅")
+_seeded, _count, _err = _run_seed()
+if _err:
+    st.error(f"❌ 시드 오류: {_err}")
+elif _seeded:
+    st.toast(f"🌱 데모 데이터 로드 완료 ({_count}건)", icon="✅")
+else:
+    st.toast(f"ℹ️ 기존 데이터 사용 중 ({_count}건)")
 
 # ── 전역 API 키 체크 ───────────────────────────────────────────
 api_key = os.getenv("OPENAI_API_KEY")
