@@ -8,9 +8,15 @@ import os
 from typing import Optional
 
 import numpy as np
-import faiss
 from openai import OpenAI
 from dotenv import load_dotenv
+
+try:
+    import faiss
+    _FAISS_AVAILABLE = True
+except ImportError:
+    faiss = None  # type: ignore
+    _FAISS_AVAILABLE = False
 
 load_dotenv()
 
@@ -20,10 +26,12 @@ EMBEDDING_DIM = 1536
 
 class RAGEngine:
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
+        if not _FAISS_AVAILABLE:
+            raise RuntimeError("faiss-cpu 패키지가 설치되지 않아 RAG 기능을 사용할 수 없습니다.")
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self._chunks: list[str] = []
-        self._index: Optional[faiss.IndexFlatL2] = None
+        self._index = None
         self._client: Optional[OpenAI] = None
 
     def _get_client(self) -> OpenAI:

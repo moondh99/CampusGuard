@@ -28,7 +28,12 @@ from modules.visualizer import (
 )
 from modules.notifier import load_config_from_env, send_alert, should_notify
 from modules.kakao_parser import parse_kakao_export, group_by_sender, detect_duplicate_senders
-from modules.rag_engine import RAGEngine
+try:
+    from modules.rag_engine import RAGEngine
+    _RAG_AVAILABLE = True
+except Exception:
+    RAGEngine = None  # type: ignore
+    _RAG_AVAILABLE = False
 
 st.set_page_config(page_title="CampusGuard", page_icon="🎓", layout="wide")
 
@@ -183,7 +188,11 @@ with tab2:
     st.caption("에러 메시지나 코드를 붙여넣으면 해결책을 알려드립니다.")
 
     # RAG: PDF 업로드
-    pdf_file = st.file_uploader("교안 PDF 업로드 (선택 — RAG 기반 답변)", type="pdf", key="rag_pdf")
+    if _RAG_AVAILABLE:
+        pdf_file = st.file_uploader("교안 PDF 업로드 (선택 — RAG 기반 답변)", type="pdf", key="rag_pdf")
+    else:
+        pdf_file = None
+        st.caption("ℹ️ RAG 기능을 사용하려면 faiss-cpu 패키지가 필요합니다.")
 
     if "rag_engine" not in st.session_state:
         st.session_state.rag_engine = None
