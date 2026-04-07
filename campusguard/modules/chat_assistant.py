@@ -4,6 +4,7 @@
 - OpenAI API 사용, 교안 맥락을 system prompt에 주입
 """
 import os
+from typing import Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -19,13 +20,18 @@ SYSTEM_PROMPT = """
 """
 
 
-def ask_assistant(user_message: str, context: str = "") -> str:
+def ask_assistant(
+    user_message: str,
+    context: str = "",
+    history: Optional[list] = None,
+) -> str:
     """
     훈련생 질문에 AI 답변 반환.
 
     Args:
         user_message: 훈련생의 질문 또는 에러 메시지
         context: 추가 교안 맥락 (선택)
+        history: 이전 대화 히스토리 (선택). 각 항목은 {"role": ..., "content": ...} 형식.
 
     Returns:
         AI 답변 문자열
@@ -47,6 +53,9 @@ def ask_assistant(user_message: str, context: str = "") -> str:
                 "content": f"현재 학습 중인 교안 맥락:\n{context}"
             })
 
+        if history:
+            messages.extend(history)
+
         messages.append({"role": "user", "content": user_message})
 
         response = client.chat.completions.create(
@@ -58,3 +67,28 @@ def ask_assistant(user_message: str, context: str = "") -> str:
         return response.choices[0].message.content
     except Exception as e:
         return f"❌ AI 답변 생성 중 오류가 발생했습니다: {str(e)}"
+
+
+def detect_traceback(text: str) -> Optional[str]:
+    """Python traceback 패턴 감지 및 추출.
+
+    Args:
+        text: 검사할 문자열
+
+    Returns:
+        traceback 패턴이 포함된 경우 해당 텍스트, 없으면 None
+    """
+    pattern = "Traceback (most recent call last):"
+    if pattern in text:
+        idx = text.index(pattern)
+        return text[idx:]
+    return None
+
+
+def clear_history() -> list:
+    """빈 히스토리 반환 (session_state 초기화용).
+
+    Returns:
+        빈 리스트
+    """
+    return []

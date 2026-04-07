@@ -2,3 +2,11 @@ streamlit==1.45.1
 openai==1.82.0
 pandas==2.2.3
 python-dotenv==1.1.0
+scikit-learn
+plotly
+python-docx
+faiss-cpu
+numpy
+requests
+hypothesis
+pypdf

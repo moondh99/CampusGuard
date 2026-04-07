@@ -6,10 +6,11 @@ import pytest
 import sys
 import os
 from unittest.mock import patch, MagicMock
+from hypothesis import given, settings, strategies as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from modules.chat_assistant import ask_assistant
+from modules.chat_assistant import ask_assistant, detect_traceback, clear_history
 
 
 def make_mock_response(content: str):
@@ -100,3 +101,113 @@ def test_context_injected_in_messages(mock_openai):
     messages = call_args.kwargs["messages"]
     all_content = " ".join(m["content"] for m in messages)
     assert "pandas 기초" in all_content
+
+
+# ── Property 7: 멀티턴 히스토리 포함 보장 ──────────────────────────────────────
+
+# Feature: campusguard-enhancement, Property 7: 멀티턴 히스토리 포함 보장
+@settings(max_examples=100)
+@given(
+    history=st.lists(
+        st.fixed_dictionaries({
+            "role": st.sampled_from(["user", "assistant"]),
+            "content": st.text(min_size=1, max_size=100),
+        }),
+        min_size=0,
+        max_size=10,
+    ),
+    user_message=st.text(min_size=1, max_size=50),
+)
+@patch("modules.chat_assistant.OpenAI")
+def test_property7_multiturn_history_included(mock_openai, history, user_message):
+    """Property 7: 멀티턴 히스토리 포함 보장
+    Validates: Requirements 3.2
+    ask_assistant가 OpenAI API에 전달하는 messages 배열은 히스토리의 모든 메시지를 포함해야 한다.
+    """
+    os.environ["OPENAI_API_KEY"] = "test-key"
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "답변"
+    mock_openai.return_value.chat.completions.create.return_value = mock_response
+
+    ask_assistant(user_message, history=history)
+
+    call_args = mock_openai.return_value.chat.completions.create.call_args
+    messages_sent = call_args.kwargs["messages"]
+
+    # 히스토리의 모든 메시지가 전달된 messages 배열에 포함되어야 한다
+    for hist_msg in history:
+        assert hist_msg in messages_sent, (
+            f"히스토리 메시지 {hist_msg}가 API 호출 messages에 포함되지 않았습니다."
+        )
+
+
+# ── Property 10: Traceback 감지 정확성 ────────────────────────────────────────
+
+# Feature: campusguard-enhancement, Property 10: Traceback 감지 정확성
+@settings(max_examples=100)
+@given(text=st.text())
+def test_property10_traceback_detection_accuracy(text):
+    """Property 10: Traceback 감지 정확성
+    Validates: Requirements 3.5
+    detect_traceback은 "Traceback (most recent call last):" 패턴을 포함하는 문자열에서만
+    비-None 값을 반환해야 한다.
+    """
+    pattern = "Traceback (most recent call last):"
+    result = detect_traceback(text)
+
+    if pattern in text:
+        assert result is not None, "패턴이 있는데 None을 반환했습니다."
+        assert pattern in result, "반환값에 패턴이 포함되어야 합니다."
+    else:
+        assert result is None, f"패턴이 없는데 None이 아닌 값을 반환했습니다: {result!r}"
+
+
+# ── 추가 단위 테스트: detect_traceback, clear_history ─────────────────────────
+
+def test_detect_traceback_with_pattern():
+    """traceback 패턴이 있을 때 비-None 반환"""
+    text = "some output\nTraceback (most recent call last):\n  File 'x.py', line 1\nValueError"
+    result = detect_traceback(text)
+    assert result is not None
+    assert "Traceback (most recent call last):" in result
+
+
+def test_detect_traceback_without_pattern():
+    """traceback 패턴이 없을 때 None 반환"""
+    assert detect_traceback("일반 텍스트입니다.") is None
+    assert detect_traceback("") is None
+
+
+def test_clear_history_returns_empty_list():
+    """clear_history는 빈 리스트를 반환해야 한다"""
+    result = clear_history()
+    assert result == []
+    assert isinstance(result, list)
+
+
+@patch("modules.chat_assistant.OpenAI")
+def test_ask_assistant_with_history(mock_openai):
+    """history 파라미터가 messages에 포함되는지 확인"""
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    mock_openai.return_value.chat.completions.create.return_value = make_mock_response("답변")
+
+    history = [
+        {"role": "user", "content": "이전 질문"},
+        {"role": "assistant", "content": "이전 답변"},
+    ]
+    ask_assistant("새 질문", history=history)
+
+    call_args = mock_openai.return_value.chat.completions.create.call_args
+    messages = call_args.kwargs["messages"]
+    assert {"role": "user", "content": "이전 질문"} in messages
+    assert {"role": "assistant", "content": "이전 답변"} in messages
+
+
+@patch("modules.chat_assistant.OpenAI")
+def test_ask_assistant_no_history_backward_compat(mock_openai):
+    """history 없이 호출해도 기존 동작 유지 (하위 호환성)"""
+    os.environ["OPENAI_API_KEY"] = "test-key"
+    mock_openai.return_value.chat.completions.create.return_value = make_mock_response("답변")
+    result = ask_assistant("질문")
+    assert isinstance(result, str)

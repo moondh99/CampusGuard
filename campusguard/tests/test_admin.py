@@ -5,11 +5,15 @@
 import pytest
 import sys
 import os
+from io import BytesIO
 from unittest.mock import patch, MagicMock
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from docx import Document
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from modules.admin_writer import generate_counseling_log, generate_reason_letter
+from modules.admin_writer import generate_counseling_log, generate_reason_letter, generate_counseling_docx
 
 
 def make_mock_response(content: str):
@@ -97,3 +101,120 @@ def test_counseling_log_uses_placeholder(mock_openai, monkeypatch):
     result = generate_counseling_log("김훈련", "취업 고민", "경고", "지각 2회")
     assert "[이름]" in result
     assert "김훈련" not in result
+
+
+# Feature: campusguard-enhancement, Property 11: .docx 변환 필수 필드 포함
+@settings(max_examples=100)
+@given(
+    trainee_name=st.text(min_size=1, alphabet=st.characters(whitelist_categories=("L", "N", "P", "Zs"))),
+    course_name=st.text(min_size=1, alphabet=st.characters(whitelist_categories=("L", "N", "P", "Zs"))),
+    counseling_date=st.text(min_size=1, alphabet=st.characters(whitelist_categories=("L", "N", "P", "Zs"))),
+    content=st.text(min_size=1, alphabet=st.characters(whitelist_categories=("L", "N", "P", "Zs"))),
+    action=st.text(min_size=1, alphabet=st.characters(whitelist_categories=("L", "N", "P", "Zs"))),
+)
+def test_property_11_docx_contains_required_fields(
+    trainee_name, course_name, counseling_date, content, action
+):
+    """
+    Property 11: .docx 변환 필수 필드 포함
+    Validates: Requirements 4.3, 4.5
+    """
+    result = generate_counseling_docx(
+        trainee_name=trainee_name,
+        course_name=course_name,
+        counseling_date=counseling_date,
+        content=content,
+        action=action,
+    )
+
+    # 반환값이 비어있지 않아야 함
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+
+    # python-docx로 파싱하여 필드 값 포함 여부 확인
+    doc = Document(BytesIO(result))
+    full_text = "\n".join(
+        cell.text for table in doc.tables for row in table.rows for cell in row.cells
+    )
+
+    assert trainee_name in full_text
+    assert course_name in full_text
+    assert counseling_date in full_text
+    assert content in full_text
+    assert action in full_text
+
+
+# ── to_docx 단위 테스트 ────────────────────────────────────────────────────────
+
+from modules.admin_writer import to_docx
+
+
+def test_to_docx_returns_bytes():
+    """to_docx는 비어있지 않은 bytes를 반환해야 한다"""
+    result = to_docx("테스트 내용입니다.")
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+
+
+def test_to_docx_default_title():
+    """기본 제목 '상담일지'가 docx에 포함되어야 한다"""
+    result = to_docx("내용")
+    doc = Document(BytesIO(result))
+    headings = [p.text for p in doc.paragraphs if p.style.name.startswith("Heading")]
+    assert any("상담일지" in h for h in headings)
+
+
+def test_to_docx_custom_title():
+    """커스텀 제목이 docx에 포함되어야 한다"""
+    result = to_docx("내용", title="사유서")
+    doc = Document(BytesIO(result))
+    headings = [p.text for p in doc.paragraphs if p.style.name.startswith("Heading")]
+    assert any("사유서" in h for h in headings)
+
+
+def test_to_docx_content_included():
+    """본문 텍스트가 docx에 포함되어야 한다"""
+    content = "훈련생 김철수는 2024-01-15 상담을 진행하였음."
+    result = to_docx(content)
+    doc = Document(BytesIO(result))
+    full_text = "\n".join(p.text for p in doc.paragraphs)
+    assert content in full_text
+
+
+def test_generate_counseling_docx_returns_bytes():
+    """generate_counseling_docx는 비어있지 않은 bytes를 반환해야 한다"""
+    result = generate_counseling_docx(
+        trainee_name="김훈련",
+        course_name="파이썬 기초",
+        counseling_date="2024-01-15",
+        content="취업 고민 상담",
+        action="다음 주 재상담 예정",
+    )
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+
+
+def test_generate_counseling_docx_contains_fields():
+    """generate_counseling_docx 결과 docx에 모든 필드 값이 포함되어야 한다"""
+    trainee_name = "이수강"
+    course_name = "머신러닝 심화"
+    counseling_date = "2024-02-20"
+    content = "학습 진도 부진 상담"
+    action = "보충 학습 자료 제공"
+
+    result = generate_counseling_docx(
+        trainee_name=trainee_name,
+        course_name=course_name,
+        counseling_date=counseling_date,
+        content=content,
+        action=action,
+    )
+    doc = Document(BytesIO(result))
+    full_text = "\n".join(
+        cell.text for table in doc.tables for row in table.rows for cell in row.cells
+    )
+    assert trainee_name in full_text
+    assert course_name in full_text
+    assert counseling_date in full_text
+    assert content in full_text
+    assert action in full_text

@@ -2,10 +2,21 @@
 태스크 5: 행정 서류 자동 생성
 - 상담일지 자동 초안 생성 (HRD-Net 규정 기반)
 - 사유서 자동 생성
+- .docx 변환 및 HRD-Net 양식 기반 상담일지 생성
 """
 import os
+import re
+from io import BytesIO
 from openai import OpenAI
 from dotenv import load_dotenv
+from docx import Document
+from docx.shared import Pt
+
+
+def _sanitize_xml(text: str) -> str:
+    """XML 비호환 제어 문자를 제거한다 (NULL 바이트 및 C0/C1 제어 문자)."""
+    # XML 1.0 허용 문자: #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+    return re.sub(r"[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]", "", text)
 
 load_dotenv()
 
@@ -101,3 +112,68 @@ def generate_reason_letter(situation: str) -> str:
         return response.choices[0].message.content
     except Exception as e:
         return f"❌ 서류 생성 중 오류가 발생했습니다: {str(e)}"
+
+
+def to_docx(text: str, title: str = "상담일지") -> bytes:
+    """
+    텍스트를 .docx 바이트로 변환. python-docx 사용.
+
+    Args:
+        text: 문서 본문 텍스트
+        title: 문서 제목 (기본값: "상담일지")
+
+    Returns:
+        .docx 파일의 bytes
+    """
+    doc = Document()
+    doc.add_heading(title, level=1)
+    doc.add_paragraph(text)
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def generate_counseling_docx(
+    trainee_name: str,
+    course_name: str,
+    counseling_date: str,
+    content: str,
+    action: str,
+) -> bytes:
+    """
+    HRD-Net 양식 기반 상담일지 .docx 생성.
+
+    Args:
+        trainee_name: 훈련생명
+        course_name: 과정명
+        counseling_date: 상담일시
+        content: 상담내용
+        action: 조치사항
+
+    Returns:
+        .docx 파일의 bytes
+    """
+    doc = Document()
+    doc.add_heading("상담일지", level=1)
+
+    fields = [
+        ("훈련생명", _sanitize_xml(trainee_name)),
+        ("과정명", _sanitize_xml(course_name)),
+        ("상담일시", _sanitize_xml(counseling_date)),
+        ("상담내용", _sanitize_xml(content)),
+        ("조치사항", _sanitize_xml(action)),
+    ]
+
+    table = doc.add_table(rows=len(fields), cols=2)
+    table.style = "Table Grid"
+    for i, (label, value) in enumerate(fields):
+        row = table.rows[i]
+        row.cells[0].text = label
+        row.cells[1].text = value
+        run = row.cells[0].paragraphs[0].runs[0]
+        run.bold = True
+        run.font.size = Pt(11)
+
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
