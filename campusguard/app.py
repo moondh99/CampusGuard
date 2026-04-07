@@ -98,6 +98,66 @@ with tab1:
         else:
             st.info("ℹ️ 샘플 데이터 파일을 찾을 수 없습니다. CSV 파일을 직접 업로드해주세요.")
 
+    # ── 출결 직접 입력 ──────────────────────────────────────────
+    with st.expander("➕ 출결 직접 입력"):
+        inp_col1, inp_col2, inp_col3 = st.columns(3)
+        with inp_col1:
+            inp_name = st.text_input("훈련생 이름", key="inp_name")
+        with inp_col2:
+            inp_date = st.date_input("날짜", value=date.today(), key="inp_date")
+        with inp_col3:
+            inp_status = st.selectbox("출결 상태", ["출석", "결석", "지각", "조퇴"], key="inp_status")
+
+        if st.button("출결 추가"):
+            if inp_name.strip():
+                ok = ds.insert_attendance_record(
+                    name=inp_name.strip(),
+                    date=str(inp_date),
+                    status=inp_status,
+                    course=course_name_input,
+                    cohort=cohort_input,
+                )
+                if ok:
+                    st.success(f"✅ {inp_name} / {inp_date} / {inp_status} 추가 완료")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ 이미 동일한 날짜·과정 레코드가 존재합니다.")
+            else:
+                st.warning("훈련생 이름을 입력해주세요.")
+
+    # ── DB 저장 출결 조회 및 수정/삭제 ─────────────────────────
+    with st.expander("✏️ 저장된 출결 수정 / 삭제"):
+        db_records = ds.get_attendance_records(course=course_name_input if course_name_input else None)
+        if db_records:
+            db_df = pd.DataFrame(db_records)
+            st.dataframe(db_df[["id", "name", "date", "status", "course", "cohort"]], use_container_width=True)
+
+            edit_col1, edit_col2, edit_col3 = st.columns(3)
+            with edit_col1:
+                edit_id = st.number_input("수정/삭제할 레코드 ID", min_value=1, step=1, key="edit_id")
+            with edit_col2:
+                edit_status = st.selectbox("변경할 상태", ["출석", "결석", "지각", "조퇴"], key="edit_status")
+            with edit_col3:
+                st.write("")
+                st.write("")
+                upd_col, del_col = st.columns(2)
+                with upd_col:
+                    if st.button("수정"):
+                        if ds.update_attendance_record(int(edit_id), edit_status):
+                            st.success(f"✅ ID {edit_id} → {edit_status} 수정 완료")
+                            st.rerun()
+                        else:
+                            st.error("❌ 해당 ID를 찾을 수 없습니다.")
+                with del_col:
+                    if st.button("삭제", type="secondary"):
+                        if ds.delete_attendance_record(int(edit_id)):
+                            st.success(f"✅ ID {edit_id} 삭제 완료")
+                            st.rerun()
+                        else:
+                            st.error("❌ 해당 ID를 찾을 수 없습니다.")
+        else:
+            st.info("저장된 출결 레코드가 없습니다. CSV 업로드 또는 직접 입력으로 추가하세요.")
+
     if df is not None:
         st.dataframe(df, use_container_width=True)
 

@@ -97,6 +97,38 @@ class DataStore:
         rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
+    def insert_attendance_record(
+        self, name: str, date: str, status: str, course: str, cohort: str
+    ) -> bool:
+        """단건 출결 레코드 삽입. 중복 시 False 반환."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO attendance_records (name, date, status, course, cohort)
+               VALUES (?, ?, ?, ?, ?)""",
+            (name, date, status, course, cohort),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+    def update_attendance_record(self, record_id: int, status: str) -> bool:
+        """출결 레코드 상태 수정. 성공 시 True."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            "UPDATE attendance_records SET status = ? WHERE id = ?",
+            (status, record_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+    def delete_attendance_record(self, record_id: int) -> bool:
+        """출결 레코드 삭제. 성공 시 True."""
+        conn = self._get_conn()
+        cur = conn.execute(
+            "DELETE FROM attendance_records WHERE id = ?", (record_id,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
     # ── TraineeProfile ────────────────────────────────────────────────────────
 
     def upsert_trainee(self, profile: dict) -> None:
