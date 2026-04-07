@@ -40,7 +40,11 @@ st.set_page_config(page_title="CampusGuard", page_icon="🎓", layout="wide")
 # ── 앱 시작 시 DataStore 초기화 ────────────────────────────────
 @st.cache_resource
 def get_data_store() -> DataStore:
-    db_path = os.path.join(os.path.dirname(__file__), "campusguard.db")
+    # Streamlit Cloud는 /mount/src가 읽기 전용이므로 /tmp 사용
+    if os.path.exists("/tmp"):
+        db_path = "/tmp/campusguard.db"
+    else:
+        db_path = os.path.join(os.path.dirname(__file__), "campusguard.db")
     return DataStore(db_path)
 
 ds = get_data_store()
@@ -283,7 +287,7 @@ with tab2:
 
     context_input = st.text_area(
         "현재 학습 중인 교안 맥락 (선택)",
-        height=60,
+        height=68,
         placeholder="예: pandas 기초 - DataFrame 인덱싱",
         key="chat_context",
     )
