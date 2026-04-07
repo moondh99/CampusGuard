@@ -97,41 +97,36 @@ def seed_if_empty(ds) -> bool:
     if existing:
         return False
 
-    conn = ds._get_conn()
     class_days = _get_class_days()
     total = len(class_days)
 
     # 1. 훈련생 프로필
     for t in TRAINEES:
-        conn.execute(
-            """INSERT INTO trainee_profiles (name, cohort, course, instructor, enrolled_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(name) DO UPDATE SET
-                   cohort=excluded.cohort, course=excluded.course,
-                   instructor=excluded.instructor, enrolled_at=excluded.enrolled_at,
-                   updated_at=datetime('now')""",
-            (t["name"], COHORT, COURSE, INSTRUCTOR, ENROLLED_AT),
-        )
+        ds.upsert_trainee({
+            "name": t["name"],
+            "cohort": COHORT,
+            "course": COURSE,
+            "instructor": INSTRUCTOR,
+            "enrolled_at": ENROLLED_AT,
+        })
 
     # 2. 출결 레코드
+    import pandas as pd
+    rows = []
     for t in TRAINEES:
         for idx, day in enumerate(class_days):
-            status = _gen_status(t["pattern"], idx, total)
-            conn.execute(
-                "INSERT OR IGNORE INTO attendance_records (name, date, status, course, cohort) VALUES (?,?,?,?,?)",
-                (t["name"], str(day), status, COURSE, COHORT),
-            )
+            rows.append({
+                "name": t["name"],
+                "date": str(day),
+                "status": _gen_status(t["pattern"], idx, total),
+            })
+    df = pd.DataFrame(rows)
+    ds.save_attendance_records(df, COURSE, COHORT)
 
     # 3. 위험도 히스토리
     for row in RISK_HISTORY:
-        conn.execute(
-            """INSERT INTO risk_history
-               (name, analyzed_at, risk_level, final_score, sentiment_score, attendance_level)
-               VALUES (?,?,?,?,?,?)""",
-            row,
-        )
+        ds.insert_risk_history(*row)
 
-    conn.commit()
     return True
 
 

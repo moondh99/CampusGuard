@@ -197,6 +197,20 @@ class DataStore:
         )
         conn.commit()
 
+    def insert_risk_history(
+        self, name: str, analyzed_at: str, risk_level: str,
+        final_score: float, sentiment_score: float, attendance_level: str
+    ) -> None:
+        """위험도 히스토리 직접 삽입 (시드/마이그레이션용)."""
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO risk_history
+               (name, analyzed_at, risk_level, final_score, sentiment_score, attendance_level)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (name, analyzed_at, risk_level, final_score, sentiment_score, attendance_level),
+        )
+        conn.commit()
+
     def get_risk_history(
         self,
         name: str = None,
